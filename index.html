@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi Presupuesto Diario & Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --muted: #94a3b8;
+      --primary: #38bdf8; --success: #10b981; --warning: #f59e0b; --danger: #ef4444;
+    }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 16px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 480px; }
+    .nav { display: flex; gap: 8px; margin-bottom: 16px; background: var(--card); padding: 6px; border-radius: 12px; }
+    .nav button { flex: 1; padding: 10px; border: none; background: transparent; color: var(--muted); font-weight: bold; border-radius: 8px; cursor: pointer; }
+    .nav button.active { background: #334155; color: var(--primary); }
+    .card { background: var(--card); border-radius: 16px; padding: 20px; margin-bottom: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); }
+    
+    /* Budget Card */
+    .budget-header { text-align: center; }
+    .budget-title { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .budget-amount { font-size: 2.4rem; font-weight: 800; color: var(--success); margin: 4px 0; }
+    .budget-amount.negative { color: var(--danger); }
+    .budget-sub { font-size: 0.8rem; color: var(--muted); display: flex; justify-content: space-around; margin-top: 10px; padding-top: 10px; border-top: 1px solid #334155; }
+    
+    /* Form */
+    label { font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; display: block; }
+    input[type="number"] { width: 100%; box-sizing: border-box; font-size: 2rem; text-align: center; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: var(--bg); color: var(--primary); font-weight: bold; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+    .cat-btn { background: #334155; border: 2px solid transparent; color: var(--text); padding: 12px 6px; border-radius: 10px; font-size: 0.85rem; font-weight: 500; cursor: pointer; }
+    .cat-btn.active { border-color: var(--primary); background: #0284c7; }
+    .save-btn { width: 100%; background: var(--success); border: none; color: white; padding: 14px; border-radius: 12px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+    .save-btn:disabled { background: #475569; }
+    #msg { text-align: center; margin-top: 10px; font-size: 0.85rem; min-height: 20px; }
+
+    /* Dashboard */
+    select { width: 100%; padding: 10px; border-radius: 8px; background: #334155; color: white; border: 1px solid #475569; margin-bottom: 14px; font-size: 0.95rem; }
+    .chart-container { position: relative; margin-bottom: 20px; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="nav">
+    <button class="active" onclick="switchTab('registro')">💸 Registrar</button>
+    <button onclick="switchTab('dashboard')">📊 Dashboard</button>
+  </div>
+
+  <!-- TAB 1: REGISTRO & SALDO HOY -->
+  <div id="tab-registro" class="tab-content active">
+    <div class="card budget-header">
+      <div class="budget-title">Disponible para gastar hoy</div>
+      <div class="budget-amount" id="disp-hoy">S/ 50.00</div>
+      <div class="budget-sub">
+        <div>Gastado este mes:<br><strong id="total-mes" style="color:var(--text)">S/ 0.00</strong></div>
+        <div>Ahorro acumulado mes:<br><strong id="ahorro-mes" style="color:var(--success)">S/ 0.00</strong></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label>Monto del gasto (Soles)</label>
+      <input type="number" id="monto" inputmode="decimal" placeholder="0.00" step="any">
+
+      <label>Categoría</label>
+      <div class="grid">
+        <button class="cat-btn" onclick="selectCat(this, 'Comida')">🍔 Comida</button>
+        <button class="cat-btn" onclick="selectCat(this, 'Taxi')">🚕 Taxi</button>
+        <button class="cat-btn" onclick="selectCat(this, 'Transporte público')">🚌 Transp. Público</button>
+        <button class="cat-btn" onclick="selectCat(this, 'Trabajo')">💼 Trabajo</button>
+        <button class="cat-btn" onclick="selectCat(this, 'Ropa')">👕 Ropa</button>
+        <button class="cat-btn" onclick="selectCat(this, 'Salidas')">🎉 Salidas</button>
+        <button class="cat-btn" style="grid-column: span 2;" onclick="selectCat(this, 'Regalos')">🎁 Regalos</button>
+      </div>
+
+      <button class="save-btn" id="submit-btn" onclick="enviarGasto()">Guardar Gasto</button>
+      <div id="msg"></div>
+    </div>
+  </div>
+
+  <!-- TAB 2: DASHBOARD HISTÓRICO -->
+  <div id="tab-dashboard" class="tab-content">
+    <div class="card">
+      <label>Seleccionar Mes</label>
+      <select id="month-selector" onchange="renderCharts()"></select>
+
+      <div class="budget-sub" style="margin-top:0; border:none; margin-bottom:14px;">
+        <div>Gastado en el mes:<br><strong id="dash-gastado" style="color:var(--primary); font-size:1.1rem;">S/ 0.00</strong></div>
+        <div>Ahorro final del mes:<br><strong id="dash-ahorro" style="color:var(--success); font-size:1.1rem;">S/ 0.00</strong></div>
+      </div>
+
+      <div class="chart-container">
+        <canvas id="catChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="dayChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // REEMPLAZA CON TU URL DE GOOGLE APPS SCRIPT
+  const SCRIPT_URL = "TU_URL_DE_APPS_SCRIPT_AQUI";
+
+  let allGastos = [];
+  let selectedCategory = "";
+  let catChartInstance = null;
+  let dayChartInstance = null;
+
+  function switchTab(tab) {
+    document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    if (tab === 'registro') {
+      document.querySelector('.nav button:nth-child(1)').classList.add('active');
+      document.getElementById('tab-registro').classList.add('active');
+    } else {
+      document.querySelector('.nav button:nth-child(2)').classList.add('active');
+      document.getElementById('tab-dashboard').classList.add('active');
+      renderCharts();
+    }
+  }
+
+  function selectCat(btn, cat) {
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedCategory = cat;
+  }
+
+  async function loadData() {
+    try {
+      const res = await fetch(SCRIPT_URL);
+      allGastos = await res.json();
+      calcularPresupuesto();
+      populateMonthSelector();
+    } catch (e) {
+      console.log("Modo offline o cargando...", e);
+    }
+  }
+
+  function calcularPresupuesto() {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const currentDay = now.getDate(); // Día 1 = 1, Día 2 = 2, etc.
+
+    // Filtra gastos del mes actual
+    const gastosMesActual = allGastos.filter(g => {
+      const d = new Date(g.fecha);
+      return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    });
+
+    const totalGastadoMes = gastosMesActual.reduce((acc, g) => acc + g.monto, 0);
+    
+    // Presupuesto permitido hasta hoy: 50 * día actual del mes
+    const presupuestoPermitidoHastaHoy = currentDay * 50;
+    const disponibleHoy = presupuestoPermitidoHastaHoy - totalGastadoMes;
+    
+    // Ahorro generado hasta la fecha
+    const ahorroActual = presupuestoPermitidoHastaHoy - totalGastadoMes;
+
+    const dispEl = document.getElementById('disp-hoy');
+    dispEl.innerText = `S/ ${disponibleHoy.toFixed(2)}`;
+    dispEl.className = disponibleHoy >= 0 ? 'budget-amount' : 'budget-amount negative';
+
+    document.getElementById('total-mes').innerText = `S/ ${totalGastadoMes.toFixed(2)}`;
+    document.getElementById('ahorro-mes').innerText = `S/ ${Math.max(0, ahorroActual).toFixed(2)}`;
+  }
+
+  function populateMonthSelector() {
+    const selector = document.getElementById('month-selector');
+    const months = {};
+    
+    allGastos.forEach(g => {
+      const d = new Date(g.fecha);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months[key] = d.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+    });
+
+    // Agregar mes actual si no hay datos aún
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    months[currentKey] = now.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+
+    selector.innerHTML = '';
+    Object.keys(months).sort().reverse().forEach(k => {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.innerText = months[k].toUpperCase();
+      selector.appendChild(opt);
+    });
+  }
+
+  function renderCharts() {
+    const selectedKey = document.getElementById('month-selector').value;
+    if (!selectedKey) return;
+
+    const [year, month] = selectedKey.split('-').map(Number);
+    const filtered = allGastos.filter(g => {
+      const d = new Date(g.fecha);
+      return d.getFullYear() === year && (d.getMonth() + 1) === month;
+    });
+
+    const totalGasto = filtered.reduce((acc, g) => acc + g.monto, 0);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const presupuestoTotalMes = daysInMonth * 50;
+    const ahorroMes = Math.max(0, presupuestoTotalMes - totalGasto);
+
+    document.getElementById('dash-gastado').innerText = `S/ ${totalGasto.toFixed(2)}`;
+    document.getElementById('dash-ahorro').innerText = `S/ ${ahorroMes.toFixed(2)}`;
+
+    // Agrupación por categoría
+    const cats = {};
+    filtered.forEach(g => {
+      cats[g.categoria] = (cats[g.categoria] || 0) + g.monto;
+    });
+
+    // Agrupación por día
+    const daily = {};
+    filtered.forEach(g => {
+      const day = new Date(g.fecha).getDate();
+      daily[day] = (daily[day] || 0) + g.monto;
+    });
+
+    // Destruir gráficos anteriores
+    if (catChartInstance) catChartInstance.destroy();
+    if (dayChartInstance) dayChartInstance.destroy();
+
+    // Chart Categorías
+    const ctxCat = document.getElementById('catChart').getContext('2d');
+    catChartInstance = new Chart(ctxCat, {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(cats),
+        datasets: [{
+          data: Object.values(cats),
+          backgroundColor: ['#38bdf8', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#64748b']
+        }]
+      },
+      options: { plugins: { title: { display: true, text: 'Distribución por Categorías', color: '#f8fafc' }, legend: { labels: { color: '#94a3b8' } } } }
+    });
+
+    // Chart Diario
+    const daysLabels = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    const dayData = daysLabels.map(d => daily[d] || 0);
+
+    const ctxDay = document.getElementById('dayChart').getContext('2d');
+    dayChartInstance = new Chart(ctxDay, {
+      type: 'bar',
+      data: {
+        labels: daysLabels,
+        datasets: [
+          { label: 'Gasto Diario (S/)', data: dayData, backgroundColor: '#38bdf8' },
+          { label: 'Meta Diaria (S/ 50)', data: Array(daysInMonth).fill(50), type: 'line', borderColor: '#f59e0b', borderDash: [4, 4], fill: false }
+        ]
+      },
+      options: {
+        scales: {
+          x: { ticks: { color: '#94a3b8' } },
+          y: { ticks: { color: '#94a3b8' } }
+        },
+        plugins: { title: { display: true, text: 'Gastos Diarios vs Meta (S/ 50)', color: '#f8fafc' }, legend: { labels: { color: '#94a3b8' } } }
+      }
+    });
+  }
+
+  async function enviarGasto() {
+    const monto = document.getElementById('monto').value;
+    const msg = document.getElementById('msg');
+    const btn = document.getElementById('submit-btn');
+
+    if (!monto || Number(monto) <= 0) {
+      msg.style.color = "#ef4444";
+      msg.innerText = "Ingresa un monto válido.";
+      return;
+    }
+    if (!selectedCategory) {
+      msg.style.color = "#ef4444";
+      msg.innerText = "Selecciona una categoría.";
+      return;
+    }
+
+    btn.disabled = true;
+    msg.style.color = "#94a3b8";
+    msg.innerText = "Guardando en Google Sheets...";
+
+    try {
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monto: monto, categoria: selectedCategory })
+      });
+
+      // Actualizar localmente de inmediato
+      allGastos.push({ fecha: new Date().toISOString(), monto: Number(monto), categoria: selectedCategory });
+      calcularPresupuesto();
+
+      msg.style.color = "#10b981";
+      msg.innerText = "¡Gasto guardado con éxito! ✅";
+      document.getElementById('monto').value = "";
+      document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+      selectedCategory = "";
+    } catch (err) {
+      msg.style.color = "#ef4444";
+      msg.innerText = "Error al conectar con Sheets.";
+    } finally {
+      btn.disabled = false;
+      setTimeout(() => { if (msg.innerText.includes("éxito")) msg.innerText = ""; }, 3000);
+    }
+  }
+
+  // Cargar datos al abrir
+  loadData();
+</script>
+</body>
+</html>
